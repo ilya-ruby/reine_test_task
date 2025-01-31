@@ -15,12 +15,14 @@ GEM
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.13.0)
     rspec-support (3.13.2)
+    ruby-progressbar (1.13.0)
 
 PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
   rspec
+  ruby-progressbar
 
 BUNDLED WITH
    2.4.10
