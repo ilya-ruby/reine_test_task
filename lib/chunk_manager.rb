@@ -1,44 +1,44 @@
 require 'tempfile'
 require 'ruby-progressbar'
 require_relative 'transaction'
+require_relative 'config'  # Подключаем конфиг
 
 class ChunkManager
-  CHUNK_SIZE = 500_000
-
   def self.split_and_sort_chunks(input_file)
     chunk_files = []
-    chunk = []
-    chunk_count = 0
-    progress = ProgressBar.create(title: "Создание чанков", total: nil, format: "%t: |%B| %c чанков")
+    chunk = Array.new(CHUNK_SIZE) # Оптимизированный массив фиксированного размера
+    index = 0
 
-    File.foreach(input_file) do |line|
-      chunk << Transaction.new(line)
+    progress = ProgressBar.create(title: "Создание чанков", total: nil, format: PROGRESS_FORMAT)
 
-      if chunk.size >= CHUNK_SIZE
-        chunk_files << write_sorted_chunk(chunk)
-        chunk_count += 1
-        chunk.clear
-        progress.increment
+    File.open(input_file, 'r') do |file|
+      file.each_line do |line|
+        chunk[index] = Transaction.new(line)
+        index += 1
+
+        if index >= CHUNK_SIZE
+          chunk_files << write_sorted_chunk(chunk, index)
+          index = 0
+          progress.increment
+        end
       end
     end
 
-    unless chunk.empty?
-      chunk_files << write_sorted_chunk(chunk)
-      chunk_count += 1
-      progress.increment
-    end
-
+    chunk_files << write_sorted_chunk(chunk, index) if index > 0
     progress.finish
-    puts "[#{Time.now.strftime('%H:%M:%S')}] Создано #{chunk_count} чанков."
-    chunk_files # Возвращаем список временных файлов
+
+    puts "[#{Time.now.strftime('%H:%M:%S')}] Создано #{chunk_files.size} чанков."
+    chunk_files
   end
 
   private
 
-  def self.write_sorted_chunk(chunk)
+  def self.write_sorted_chunk(chunk, size)
+    chunk = chunk[0...size]
     chunk.sort_by! { |txn| -txn.amount }
-    file = Tempfile.new(['chunk', '.txt'])
-    chunk.each { |txn| file.puts(txn) }
+
+    file = Tempfile.new(['chunk', '.txt'], binmode: true)
+    file.write(chunk.map(&:to_s).join("\n"))
     file.flush
     file.rewind
     file

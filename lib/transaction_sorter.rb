@@ -1,5 +1,6 @@
 require_relative 'chunk_manager'
 require_relative 'file_merger'
+require_relative 'config'  # Подключаем конфиг
 
 class TransactionSorter
   def initialize(input_file, output_file)

@@ -1,22 +1,21 @@
 require 'ruby-progressbar'
 require_relative 'transaction'
+require_relative 'config'  # Подключаем конфиг
 
 class FileMerger
-  MAX_OPEN_FILES = 256
-
   def self.merge_sorted_chunks(chunk_files, output_file)
-    progress = ProgressBar.create(title: "Слияние файлов", total: chunk_files.size, format: "%t: |%B| %c/%C")
+    progress = ProgressBar.create(title: "Слияние файлов", total: chunk_files.size, format: PROGRESS_FORMAT)
 
     File.open(output_file, 'w') do |output|
       chunk_groups = chunk_files.each_slice(MAX_OPEN_FILES).to_a
 
       chunk_groups.each do |group|
         merge_group(group, output, progress)
-        delete_temp_files(group, progress)
+        delete_temp_files(group)
       end
     end
 
-    progress.finish
+    progress.finish unless progress.finished?
     puts "[#{Time.now.strftime('%H:%M:%S')}] Слияние завершено."
   end
 
@@ -26,11 +25,10 @@ class FileMerger
     readers = open_files(chunk_files)
     heap = initialize_heap(readers)
 
-    merge_heap(heap, readers, output)
+    merge_heap(heap, readers, output, progress)
     close_files(readers)
 
-    # Обновляем прогресс после обработки всей группы файлов
-    progress.increment(chunk_files.size)
+    chunk_files.size.times { progress.increment unless progress.finished? }
   end
 
   def self.open_files(chunk_files)
@@ -41,11 +39,8 @@ class FileMerger
     readers.each(&:close)
   end
 
-  def self.delete_temp_files(chunk_files, progress)
-    chunk_files.each do |file|
-      file.unlink
-      progress.increment
-    end
+  def self.delete_temp_files(chunk_files)
+    chunk_files.each(&:unlink)
   end
 
   def self.initialize_heap(readers)
@@ -58,15 +53,28 @@ class FileMerger
     heap
   end
 
-  def self.merge_heap(heap, readers, output)
+  def self.merge_heap(heap, readers, output, progress)
+    buffer = []
+    total_lines = 0
+
     while heap.any?
       txn, index = heap.shift
-      output.puts txn
+      buffer << txn.to_s
+      total_lines += 1
+
+      if buffer.size >= BUFFER_SIZE
+        output.write(buffer.join("\n") + "\n")
+        buffer.clear
+      end
 
       next_line = readers[index].gets
       heap << [Transaction.new(next_line), index] if next_line
       heap.sort_by! { |txn, _| -txn.amount }
+
+      progress.increment if (total_lines % 10_000).zero? && !progress.finished?
     end
+
+    output.write(buffer.join("\n") + "\n") unless buffer.empty?
   end
 end
 
